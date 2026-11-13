@@ -9,12 +9,18 @@ export function LoginClient(props: {
   supabaseUrl: string | null;
   supabaseAnonKey: string | null;
   notice: "deleted" | "expired" | "error" | null;
+  guest?: boolean;
+  inviteRequired?: boolean;
+  initialInvite?: string;
+  adminKey?: string;
 }) {
   const { t, lang } = useT();
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [invite, setInvite] = useState(props.initialInvite ?? "");
+  const he = lang === "he";
 
   const supa = () => createBrowserClient(props.supabaseUrl!, props.supabaseAnonKey!);
   const redirectTo = () => `${window.location.origin}/auth/callback`;
@@ -38,12 +44,21 @@ export function LoginClient(props: {
   };
   const demo = async () => {
     setBusy(true);
-    const r = await fetch("/api/auth/demo", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: "Local demo" }) });
-    if (r.ok) window.location.href = "/onboarding";
-    else {
-      setErr("Local demo sign-in is unavailable.");
-      setBusy(false);
+    const r = await fetch("/api/auth/demo", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ label: props.guest ? "Guest" : "Local demo", invite, adminKey: props.adminKey || undefined }),
+    });
+    if (r.ok) {
+      window.location.href = "/onboarding";
+      return;
     }
+    const code = ((await r.json().catch(() => ({}))) as { error?: string }).error;
+    setErr(
+      code === "invite_required" ? (he ? "קוד ההזמנה לא נכון." : "That invite code isn't right.")
+      : code === "rate_limited" ? (he ? "יותר מדי ניסיונות. נסו שוב מחר." : "Too many new accounts from here today. Try again tomorrow.")
+      : props.guest ? (he ? "לא הצלחנו להתחיל. נסו שוב." : "Couldn't start. Please try again.") : "Local demo sign-in is unavailable.",
+    );
+    setBusy(false);
   };
 
   const notice = props.notice === "deleted" ? "Your account was deleted." : props.notice === "expired" ? t("sessionExpired") : props.notice === "error" ? "Sign-in failed. Please try again." : null;
@@ -72,7 +87,26 @@ export function LoginClient(props: {
             <p className="text-center text-xs text-muted">Adults only (18+).</p>
           </>
         )}
-        {props.mode === "local_demo" && (
+        {props.mode === "local_demo" && props.guest && (
+          <form onSubmit={(e) => { e.preventDefault(); void demo(); }} className="space-y-3">
+            {props.inviteRequired && !props.adminKey && (
+              <>
+                <label className="block text-sm text-muted" htmlFor="invite">{he ? "קוד הזמנה" : "Invite code"}</label>
+                <input id="invite" required value={invite} onChange={(e) => setInvite(e.target.value)} autoComplete="off" autoCapitalize="none"
+                  className="h-12 w-full rounded-xl border border-line bg-white/[0.04] px-3" data-testid="invite-input" />
+              </>
+            )}
+            <button disabled={busy} className="h-12 w-full rounded-xl bg-peach font-medium text-peach-ink" data-testid="demo-login">
+              {props.adminKey ? "Enter as operator" : he ? "בואו נתחיל — 12 שאלות, 7 שירים" : "Let's start — 12 questions, 7 songs"}
+            </button>
+            <p className="text-center text-xs text-muted">
+              {he
+                ? "בלי הרשמה: החשבון שלך נשמר בדפדפן הזה. לגילאי 18+. גרסת ניסיון."
+                : "No sign-up: your account lives in this browser. Adults only (18+). Pilot version."}
+            </p>
+          </form>
+        )}
+        {props.mode === "local_demo" && !props.guest && (
           <>
             <button onClick={demo} disabled={busy} className="h-12 w-full rounded-xl bg-peach font-medium text-peach-ink" data-testid="demo-login">
               Start local demo account

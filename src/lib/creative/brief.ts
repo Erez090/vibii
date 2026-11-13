@@ -76,6 +76,8 @@ const THEME_LINES: Record<string, [string, string]> = {
   home_warmth: ["Kettle singing, lamps are low", "this is where the good days go"],
   evening: ["Let the evening fold the day away", "slow down, let the moonlight stay"],
   taste_signature: ["Press play, the room begins to move", "every beat is made for you"],
+  main_character: ["Walking in like the sun came up for me", "this is my song, this is who I'll be"],
+  first_light: ["Open up the windows, let the morning in", "easy like the day is gonna let me win"],
   create_new: ["Here's a song for this very moment", "every line is meant for you"],
 };
 
@@ -83,7 +85,7 @@ function titleFor(plan: SlotPlan): string {
   const t: Record<string, string> = {
     family_hook: "Little Echo", pet_joy: "Happy at the Door", pet_memory: "Small Bright Moment", night_drive: "Amber Lanes",
     move_workout: "One More Step", move_walking: "Street Tempo", partner: "Only Us", home_warmth: "Lamps Low",
-    evening: "Still Water", taste_signature: "Press Play",
+    evening: "Still Water", taste_signature: "Press Play", main_character: "Main Character", first_light: "First Light",
   };
   if (t[plan.theme]) return t[plan.theme];
   if (plan.theme.startsWith("focus")) return "Clear Desk";

@@ -8,6 +8,8 @@ import { consumeReservation, consumeStarter, releaseReservation } from "./ledger
 import { configuredArtProvider, providerFor, ProviderTransportError, type AuthorizedAsset, type ProviderMode } from "./providers";
 import { renderCoverSvg } from "../creative/cover";
 import { trackEvent } from "./analytics";
+import { ALBUM_SIZE } from "../onboarding";
+import { agentRunnerEnabled } from "./suno-agent";
 
 export const LEASE_SECONDS = 60;
 const BACKOFF_SECONDS = [15, 60, 300, 900];
@@ -29,19 +31,22 @@ export async function enqueue(db: Db, kind: "audio" | "cover", requestId: string
 
 /** Atomically claim one due job (or one whose lease expired). */
 /** `at` overrides the database clock (tests use it to simulate lease expiry). */
-export async function claimJob(workerId: string, at?: Date): Promise<Job | null> {
+export async function claimJob(workerId: string, at?: Date, opts: { includeAgent?: boolean } = {}): Promise<Job | null> {
+  const includeAgent = opts.includeAgent ?? agentRunnerEnabled();
   const { rows } = await pool().query(
     `update job_queue j set state = 'running', lease_owner = $1,
        lease_expires_at = coalesce($2::timestamptz, now()) + make_interval(secs => $3),
        attempts = j.attempts + 1, updated_at = now()
      where j.id = (
        select id from job_queue
-       where (state = 'pending' and run_after <= coalesce($2::timestamptz, now()))
-          or (state = 'running' and lease_expires_at < coalesce($2::timestamptz, now()))
+       where ((state = 'pending' and run_after <= coalesce($2::timestamptz, now()))
+          or (state = 'running' and lease_expires_at < coalesce($2::timestamptz, now())))
+         and ($4::boolean or kind <> 'audio' or not exists (
+               select 1 from generation_requests g where g.id = job_queue.request_id and g.provider_mode = 'agent'))
        order by run_after, id
        for update skip locked limit 1)
      returning j.id, j.kind, j.request_id, j.attempts, j.max_attempts`,
-    [workerId, at?.toISOString() ?? null, LEASE_SECONDS],
+    [workerId, at?.toISOString() ?? null, LEASE_SECONDS, includeAgent],
   );
   return (rows[0] as Job) ?? null;
 }
@@ -240,7 +245,7 @@ export async function completeAttempt(attemptId: string, refs: string[]) {
   const attempt = pre.rows[0];
   if (!attempt) return;
   const provider = providerFor(
-    attempt.provider === "demo_fixture" ? "demo" : attempt.provider === "suno_api" ? "official_api" : "manual",
+    attempt.provider === "demo_fixture" ? "demo" : attempt.provider === "suno_api" ? "official_api" : attempt.provider === "suno_agent" ? "agent" : "manual",
   );
   const assets: { ref: string; asset: AuthorizedAsset }[] = [];
   for (const ref of refs) assets.push({ ref, asset: await provider.resolveAuthorizedAsset(attempt.provider_job_id, ref) });
@@ -286,10 +291,31 @@ export async function completeAttempt(attemptId: string, refs: string[]) {
     if (a.provider === "demo_fixture" && firstTrack) {
       // Demo fixtures are Vibii-owned and pre-authorized: publish without operator QA.
       await publishTrack(db, firstTrack, null);
+    } else if (a.provider === "suno_agent" && firstTrack && (await agentAutoPublishAllowed(db, req.owner_id))) {
+      await db.query(
+        `update tracks set rights_status = 'authorized',
+           provenance = provenance || jsonb_build_object('download', 'downloaded by Vibii from the operator''s Suno account',
+             'authorization', 'auto-delivered by the Vibii Suno agent (operator-enabled)') where id = $1`,
+        [firstTrack],
+      );
+      await publishTrack(db, firstTrack, null);
     } else {
       await setRequestState(db, req.id, "needs_review", { actor: "worker" });
     }
   });
+}
+
+/**
+ * Agent-made Suno songs go straight to the listener only when the operator turned that on
+ * (VIBII_AGENT_AUTOPUBLISH=on), recorded a provider agreement, or the listener is an operator.
+ * Otherwise they wait in the review queue like manual uploads.
+ */
+async function agentAutoPublishAllowed(db: Db, ownerId: string) {
+  if (process.env.VIBII_AGENT_AUTOPUBLISH === "on") return true;
+  const cfg = await providerConfig(db);
+  if (cfg.commercial_agreement_evidence) return true;
+  const { rows } = await db.query("select is_admin from profiles where id = $1", [ownerId]);
+  return Boolean(rows[0]?.is_admin);
 }
 
 async function failRequest(db: Db, requestId: string, code: string) {
@@ -338,7 +364,7 @@ export async function publishTrack(db: Db, trackId: string, reviewerId: string |
   return { ok: true, duplicate: false };
 }
 
-/** The single persisted release gate: all five slots playable in-app AND five covers ready. */
+/** The single persisted release gate: all ALBUM_SIZE (7) slots playable in-app AND all covers ready. */
 export async function checkReleaseGate(db: Db, requestId: string) {
   const { rows } = await db.query("select playlist_id, owner_id, kind from generation_requests where id = $1", [requestId]);
   const r = rows[0];
@@ -356,7 +382,7 @@ export async function checkReleaseGate(db: Db, requestId: string) {
     [r.playlist_id],
   );
   const g = gate.rows[0];
-  if (g.playable < 5 || g.covers < 5) return false;
+  if (g.playable < ALBUM_SIZE || g.covers < ALBUM_SIZE) return false;
   await db.query("update playlists set released_at = now() where id = $1 and released_at is null", [r.playlist_id]);
   await consumeStarter(db, r.owner_id, r.playlist_id);
   await trackEvent(db, { ownerId: r.owner_id, name: "first_track_ready", eventId: `first_track_ready:${r.playlist_id}`, props: {} });
@@ -365,6 +391,21 @@ export async function checkReleaseGate(db: Db, requestId: string) {
 
 // ------------------------------------------------------------------ worker tick
 export async function runJob(job: Job, workerId: string) {
+  // Keep the lease alive while a long task (a Suno agent run takes minutes) is in progress, so no other
+  // worker loop reclaims the job and starts a second, paid generation.
+  const heartbeat = setInterval(() => {
+    pool()
+      .query("update job_queue set lease_expires_at = now() + make_interval(secs => $3) where id = $1 and lease_owner = $2", [job.id, workerId, LEASE_SECONDS])
+      .catch(() => {});
+  }, (LEASE_SECONDS * 1000) / 3);
+  try {
+    return await runJobInner(job, workerId);
+  } finally {
+    clearInterval(heartbeat);
+  }
+}
+
+async function runJobInner(job: Job, workerId: string) {
   try {
     if (job.kind === "cover") {
       await processCover(job.request_id);

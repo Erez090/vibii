@@ -23,7 +23,10 @@ export type Category = CoreCategory | Followup;
 /** Categories that only make sense with consent to use personal/household details. */
 export const PERSONAL_CATEGORIES: Category[] = ["relationship", "children", "pet", ...FOLLOWUPS];
 
-export const MAX_FOLLOWUPS = 2;
+/** Exactly 12 interview screens: follow-up questions are switched off (the 12 core questions only). */
+export const MAX_FOLLOWUPS = 0;
+/** Songs in the first personal album. */
+export const ALBUM_SIZE = 7;
 export const WELCOME_CREDITS = 40;
 export const CREDITS_PER_CATEGORY = 5;
 export const CREDITS_PER_SONG = 100;

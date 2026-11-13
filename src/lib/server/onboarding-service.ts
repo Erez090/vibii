@@ -1,5 +1,5 @@
 // Onboarding persistence, credit awards, stale-branch cleanup, the private draft plan and the
-// atomic completion that freezes the profile and queues exactly five slots (+ five cover tasks).
+// atomic completion that freezes the profile and queues exactly seven slots (+ seven cover tasks).
 import type { Db } from "./db";
 import {
   type Answers, type Category, type ConsentChoice, CORE_CATEGORIES, FOLLOWUPS, autoSkipped, isComplete,
@@ -131,7 +131,7 @@ async function maybeComplete(db: Db, user: SessionUser, answers: Answers, consen
 
 /**
  * Atomic completion: freeze profile + consent version, reserve the once-per-identity starter album,
- * create one starter playlist with five unique slots and enqueue one audio + one cover task each.
+ * create one starter playlist with ALBUM_SIZE (7) unique slots and enqueue one audio + one cover task each.
  * Re-entrant: unique keys make a double tap / reload return the same album.
  */
 export async function completeOnboarding(db: Db, user: SessionUser, answers: Answers, consent: ConsentChoice & { id?: string }) {

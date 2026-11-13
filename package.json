@@ -11,11 +11,12 @@
     "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",
     "db:seed": "tsx --env-file=.env.local scripts/seed.ts",
     "demo:audio": "bash scripts/make-demo-audio.sh",
-    "links:validate": "tsx scripts/validate-links.ts",
     "worker": "tsx --env-file=.env.local worker/index.ts",
     "test": "vitest run --configLoader runner",
     "test:e2e": "playwright test",
-    "dev:webpack": "WATCHPACK_POLLING=true next dev --webpack"
+    "dev:webpack": "WATCHPACK_POLLING=true next dev --webpack",
+    "catalog:build": "tsx scripts/build-catalog.ts",
+    "agent:smoke": "tsx --env-file=.env.local scripts/agent-smoke.ts"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",

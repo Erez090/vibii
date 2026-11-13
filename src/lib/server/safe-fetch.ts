@@ -20,7 +20,9 @@ export async function assertSafeUrl(raw: string, allowlist = DOWNLOAD_ALLOWLIST)
   const u = new URL(raw);
   if (u.protocol !== "https:") throw new Error("https_required");
   if (u.username || u.password) throw new Error("credentials_in_url");
-  if (!allowlist.includes(u.hostname)) throw new Error("host_not_allowed");
+  const host = u.hostname.toLowerCase();
+  const allowed = allowlist.some((h) => (h.startsWith(".") ? host.endsWith(h) && host.length > h.length : host === h));
+  if (!allowed) throw new Error("host_not_allowed");
   const addrs = await lookup(u.hostname, { all: true });
   if (!addrs.length || addrs.some((a) => isPrivateAddress(a.address))) throw new Error("private_address");
   return u;

@@ -1,65 +1,126 @@
-// My vibes: a small curated catalog of existing songs, recommended — not played — by Vibii.
-// Destinations are shown only if scripts/validate-links.ts confirmed them through the service's
-// public oEmbed endpoint (title match). Unverified destinations are omitted, never guessed.
-import verified from "./catalog-verified.json";
+// My vibes: real, existing songs recommended to the listener — 10 at a time, each with a 15-second
+// official preview (Apple's public iTunes preview clip) and links to the full song in Spotify, YouTube
+// and Apple Music. The data is built and verified by scripts/build-catalog.ts (iTunes Search API +
+// YouTube oEmbed); nothing here is guessed at runtime.
+import data from "./catalog-data.json";
 
+export type Energy = "low" | "mid" | "high";
 export interface CatalogItem {
   id: string;
+  itunesId: number;
+  store: string;
   title: string;
   artist: string;
   genres: string[];
-  energy: "low" | "mid" | "high";
   moments: string[];
-  reason: { en: string; he: string };
-  art?: { src: string; conceptLabel: true };
-  links: { service: "Spotify" | "YouTube"; url: string }[];
+  energy: Energy;
+  lang: string;
+  artwork: string | null;
+  links: { apple: string; spotify: string; youtube: string; youtubeVerified: boolean };
 }
 
-export const CATALOG: CatalogItem[] = [
-  {
-    id: "blinding-lights", title: "Blinding Lights", artist: "The Weeknd", genres: ["pop", "electronic"], energy: "high", moments: ["drive", "workout"],
-    reason: { en: "Synth-driven night-drive energy for your drive moments.", he: "אנרגיית סינת׳ של נסיעת לילה — לרגעי הנהיגה שלך." },
-    art: { src: "/concept/blinding-lights-concept.jpg", conceptLabel: true },
-    links: [
-      { service: "Spotify", url: "https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b" },
-      { service: "YouTube", url: "https://www.youtube.com/watch?v=4NRXx6U8ABQ" },
-    ],
-  },
-  {
-    id: "midnight-city", title: "Midnight City", artist: "M83", genres: ["electronic", "indie"], energy: "high", moments: ["drive", "walking"],
-    reason: { en: "Big, glowing synths for city lights and open roads.", he: "סינתים גדולים וזוהרים לאורות העיר ולכביש פתוח." },
-    links: [{ service: "YouTube", url: "https://www.youtube.com/watch?v=dX3k_QDnzHE" }],
-  },
-  {
-    id: "weightless", title: "Weightless", artist: "Marconi Union", genres: ["electronic", "lofi"], energy: "low", moments: ["winding_down", "work"],
-    reason: { en: "Slow ambient textures for winding down or deep focus.", he: "מרקמים אמביינטיים איטיים לסוף היום או לריכוז עמוק." },
-    links: [{ service: "YouTube", url: "https://www.youtube.com/watch?v=UfcAVejslrU" }],
-  },
-  {
-    id: "take-five", title: "Take Five", artist: "The Dave Brubeck Quartet", genres: ["jazz"], energy: "mid", moments: ["home", "work"],
-    reason: { en: "A relaxed classic groove for an easy hour at home.", he: "גרוב קלאסי ורגוע לשעה נינוחה בבית." },
-    links: [{ service: "YouTube", url: "https://www.youtube.com/watch?v=vmDDOFXSgAs" }],
-  },
-  {
-    id: "get-lucky", title: "Get Lucky", artist: "Daft Punk", genres: ["electronic", "pop"], energy: "mid", moments: ["home", "walking", "workout"],
-    reason: { en: "Feel-good funk to lift an ordinary afternoon.", he: "פאנק משמח שמרים צהריים רגילים." },
-    links: [{ service: "YouTube", url: "https://www.youtube.com/watch?v=5NV6Rdv1a3I" }],
-  },
-  {
-    id: "clair-de-lune", title: "Clair de Lune", artist: "Claude Debussy", genres: ["classical"], energy: "low", moments: ["winding_down", "work"],
-    reason: { en: "Gentle piano for quiet evenings and focused work.", he: "פסנתר עדין לערבים שקטים ולעבודה מרוכזת." },
-    links: [{ service: "YouTube", url: "https://www.youtube.com/watch?v=CvFH_6DNRCY" }],
-  },
-];
+export const CATALOG = data as CatalogItem[];
+export const PAGE_SIZE = 10;
+export const PREVIEW_SECONDS = 15;
 
-const VERIFIED = verified as Record<string, { verifiedAt: string; title: string }>;
-
-export function verifiedLinks(item: CatalogItem) {
-  return item.links.filter((l) => VERIFIED[l.url]);
+export interface TasteTags {
+  genres: string[];
+  moments: string[];
+  languages: string[];
 }
 
-export function recommend(tags: { genres: string[]; moments: string[] }, limit = 5) {
-  const score = (i: CatalogItem) =>
-    i.genres.filter((g) => tags.genres.includes(g)).length * 2 + i.moments.filter((m) => tags.moments.includes(m)).length;
-  return [...CATALOG].sort((a, b) => score(b) - score(a)).slice(0, limit);
+function seeded(seed: string) {
+  let h = 2166136261;
+  for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return (s: string) => {
+    let x = h;
+    for (const c of s) x = Math.imul(x ^ c.charCodeAt(0), 16777619);
+    return (x >>> 0) / 4294967295;
+  };
+}
+
+export function score(item: CatalogItem, tags: TasteTags) {
+  const g = item.genres.filter((x) => tags.genres.includes(x)).length;
+  const m = item.moments.filter((x) => tags.moments.includes(x)).length;
+  const langs = tags.languages.filter((l) => l !== "mixed");
+  const l = langs.length === 0 ? 0 : langs.includes(item.lang) ? 1 : item.lang === "instrumental" ? 0 : -1;
+  return g * 3 + m * 1.5 + l * 2.5;
+}
+
+export interface Recommendation {
+  item: CatalogItem;
+  matched: { genres: string[]; moments: string[]; language: boolean };
+}
+
+/** Personal ranking, one song per artist per page, stable per listener (seed) with gentle variety. */
+export function recommend(tags: TasteTags, opts: { page?: number; seed?: string; limit?: number } = {}): { items: Recommendation[]; hasMore: boolean } {
+  const limit = opts.limit ?? PAGE_SIZE;
+  const page = Math.max(0, opts.page ?? 0);
+  const jitter = seeded(opts.seed ?? "vibii");
+  const ranked = [...CATALOG]
+    .map((item) => ({ item, s: score(item, tags) + jitter(item.id) * 1.2 }))
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.item);
+  // Spread artists: walk the ranking in rounds so each page has at most one song per artist.
+  const pages: CatalogItem[][] = [];
+  const pool = [...ranked];
+  while (pool.length) {
+    const pageItems: CatalogItem[] = [];
+    const artists = new Set<string>();
+    for (let i = 0; i < pool.length && pageItems.length < limit; ) {
+      const key = pool[i].artist.toLowerCase();
+      if (artists.has(key)) {
+        i++;
+        continue;
+      }
+      artists.add(key);
+      pageItems.push(pool.splice(i, 1)[0]);
+    }
+    if (!pageItems.length) break;
+    pages.push(pageItems);
+  }
+  const items = (pages[page] ?? []).map((item) => ({
+    item,
+    matched: {
+      genres: item.genres.filter((x) => tags.genres.includes(x)),
+      moments: item.moments.filter((x) => tags.moments.includes(x)),
+      language: tags.languages.includes(item.lang),
+    },
+  }));
+  return { items, hasMore: page + 1 < pages.length };
+}
+
+export function findItem(itunesId: number) {
+  return CATALOG.find((c) => c.itunesId === itunesId) ?? null;
+}
+
+const GENRE_LABEL: Record<string, { en: string; he: string }> = {
+  pop: { en: "Pop", he: "פופ" }, rnb: { en: "R&B", he: "R&B" }, hiphop: { en: "Hip hop", he: "היפ הופ" },
+  electronic: { en: "Electronic", he: "אלקטרוני" }, rock: { en: "Rock", he: "רוק" }, indie: { en: "Indie", he: "אינדי" },
+  jazz: { en: "Jazz", he: "ג׳אז" }, classical: { en: "Classical", he: "קלאסי" }, latin: { en: "Latin", he: "לטיני" },
+  mizrahi: { en: "Mizrahi", he: "מזרחית" }, folk: { en: "Folk", he: "פולק" }, lofi: { en: "Lo-fi", he: "לו־פיי" },
+};
+const MOMENT_LABEL: Record<string, { en: string; he: string }> = {
+  drive: { en: "driving", he: "נהיגה" }, work: { en: "focus time", he: "זמן ריכוז" }, workout: { en: "workouts", he: "אימונים" },
+  walking: { en: "walks", he: "הליכות" }, home: { en: "time at home", he: "זמן בבית" }, winding_down: { en: "winding down", he: "סוף היום" },
+};
+
+export function genreLabel(g: string, lang: "en" | "he") {
+  return GENRE_LABEL[g]?.[lang] ?? g;
+}
+
+/** A short, honest "why this song" line built from the tags that actually matched. */
+export function reasonFor(r: Recommendation, lang: "en" | "he") {
+  const g = r.matched.genres.map((x) => genreLabel(x, lang));
+  const m = r.matched.moments.map((x) => MOMENT_LABEL[x]?.[lang] ?? x);
+  if (lang === "he") {
+    if (g.length && m.length) return `כי את/ה אוהב/ת ${g.join(" ו")} — ומושלם ל${m[0]}.`;
+    if (g.length) return `כי את/ה אוהב/ת ${g.join(" ו")}.`;
+    if (m.length) return `מושלם ל${m[0]}.`;
+    return "משהו חדש שכדאי לגלות.";
+  }
+  if (g.length && m.length) return `Because you like ${g.join(" & ")} — great for ${m[0]}.`;
+  if (g.length) return `Because you like ${g.join(" & ")}.`;
+  if (m.length) return `Great for ${m[0]}.`;
+  return "Something new worth discovering.";
 }

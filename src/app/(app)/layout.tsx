@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/server/auth";
-import { authMode } from "@/lib/server/env";
+import { authMode, guestAccess } from "@/lib/server/env";
 import { tx } from "@/lib/server/db";
 import { PlayerProvider } from "@/components/player/PlayerProvider";
 import { AppShell } from "@/components/AppShell";
@@ -13,7 +13,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!st?.completed_at) redirect("/onboarding");
   return (
     <PlayerProvider>
-      <AppShell isDemo={user.isDemo}>{children}</AppShell>
+      <AppShell isDemo={user.isDemo && !guestAccess()}>{children}</AppShell>
     </PlayerProvider>
   );
 }

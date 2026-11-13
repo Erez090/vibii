@@ -4,9 +4,12 @@
 // documents no request schema, auth method, pricing or limits for this account, so no endpoint,
 // tool name, price or response format is invented here.
 import type { Brief } from "../creative/brief";
+import {
+  agentRunnerEnabled, buildAgentPrompt, decodeAgentJob, encodeAgentJob, parseAgentOutput, runClaudeAgent, storeSunoAudio, sunoTag, AgentError,
+} from "./suno-agent";
 
-export type ProviderMode = "demo" | "manual" | "official_api";
-export type ProviderId = "demo_fixture" | "suno_manual" | "suno_api";
+export type ProviderMode = "demo" | "manual" | "official_api" | "agent";
+export type ProviderId = "demo_fixture" | "suno_manual" | "suno_api" | "suno_agent";
 
 export interface ProviderCapabilities {
   automated: boolean;
@@ -115,6 +118,46 @@ export const officialApiProvider: Provider = {
   },
 };
 
+// ------------------------------------------------------------------ Suno via local Claude Code agent
+// submit() runs the whole agent (create → wait → Vibii downloads + stores the audio) and only then
+// reports "accepted", so getStatus() is immediately "succeeded". Idempotent: the agent reuses a Suno
+// song already tagged with this submission key.
+export const agentProvider: Provider = {
+  id: "suno_agent",
+  mode: "agent",
+  capabilities: { automated: true, officialDownload: true, externalLink: false, idempotency: true, webhook: false },
+  availability: () =>
+    agentRunnerEnabled()
+      ? { ok: true }
+      : { ok: false, reason: "The Suno agent runs only in the Vibii worker on the operator's computer (VIBII_AGENT_RUNNER=on)." },
+  async submit({ brief, submissionKey }) {
+    const tag = sunoTag(submissionKey);
+    let text: string;
+    try {
+      text = await runClaudeAgent(buildAgentPrompt(brief, tag));
+    } catch (e) {
+      if (e instanceof AgentError) return { kind: "rejected", code: e.code, retryable: e.retryable };
+      throw new ProviderTransportError("agent_failed", false);
+    }
+    try {
+      const outcome = parseAgentOutput(text);
+      const key = `agent/${submissionKey.replace(/[^a-zA-Z0-9-]/g, "_")}-${outcome.sunoId}.mp3`;
+      const stored = await storeSunoAudio(outcome, key);
+      return { kind: "accepted", jobId: encodeAgentJob(outcome.sunoId, key, stored.durationSeconds) };
+    } catch (e) {
+      if (e instanceof AgentError) return { kind: "rejected", code: e.code, retryable: e.retryable };
+      return { kind: "rejected", code: "agent_output_invalid", retryable: true };
+    }
+  },
+  async getStatus(jobId) {
+    return { state: "succeeded", candidates: [{ ref: decodeAgentJob(jobId).sunoId }] };
+  },
+  async resolveAuthorizedAsset(jobId) {
+    const j = decodeAgentJob(jobId);
+    return { kind: "stored", storageKey: j.storageKey, mimeType: "audio/mpeg", durationSeconds: j.durationSeconds, label: "Made with Suno for you" };
+  },
+};
+
 const overrides: Partial<Record<ProviderMode, Provider>> = {};
 /** Test hook: swap a provider implementation (never used by app code). */
 export function __setProviderForTests(mode: ProviderMode, p: Provider | null) {
@@ -123,7 +166,7 @@ export function __setProviderForTests(mode: ProviderMode, p: Provider | null) {
 }
 
 export function providerFor(mode: ProviderMode): Provider {
-  return overrides[mode] ?? (mode === "demo" ? demoProvider : mode === "manual" ? manualProvider : officialApiProvider);
+  return overrides[mode] ?? (mode === "demo" ? demoProvider : mode === "manual" ? manualProvider : mode === "agent" ? agentProvider : officialApiProvider);
 }
 
 // ------------------------------------------------------------------ art provider

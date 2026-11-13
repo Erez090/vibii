@@ -65,6 +65,7 @@ export function AdminHome() {
             <select value={cfg.mode ?? ""} onChange={(e) => setCfg({ ...cfg, mode: e.target.value })} className={input}>
               <option value="demo" className="bg-[#1a1430]">demo — labelled local fixtures</option>
               <option value="manual" className="bg-[#1a1430]">manual — operator (e.g. your Suno account)</option>
+              <option value="agent" className="bg-[#1a1430]">agent — automatic, your Suno via Claude Code worker</option>
               <option value="official_api" disabled className="bg-[#1a1430]">official_api — unavailable</option>
             </select>
           </label>

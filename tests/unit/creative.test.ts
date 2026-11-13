@@ -15,13 +15,14 @@ describe("planner & briefs", () => {
       pet: a({ status: "now", name: "Bell", species: "dog" }), fu_pet_joy: a({ text: "the beach" }),
       relationship: a({ status: "single" }), moments: a({ moments: ["drive"] }),
     }, { personalDetails: true, providerProcessing: true }, 1);
-    expect(plan.slots.map((s) => s.theme)).toEqual(["family_hook", "night_drive", "pet_joy", "focus", "evening"]);
+    expect(plan.slots.map((s) => s.theme)).toEqual(["family_hook", "night_drive", "pet_joy", "focus", "main_character", "first_light", "evening"]);
   });
 
-  it("taste-only profiles still get five distinct slots with no lyric facts", () => {
-    const plan = planAlbum({ genres: a({ genres: ["jazz"] }) }, { personalDetails: false, providerProcessing: true }, 1);
-    expect(plan.slots).toHaveLength(5);
-    expect(new Set(plan.slots.map((s) => s.motif)).size).toBe(5);
+  it("taste-only profiles still get seven distinct slots with no lyric facts", () => {
+    const plan = planAlbum({ genres: a({ genres: ["jazz"] }), display_name: a({ text: "Dana" }) }, { personalDetails: false, providerProcessing: true }, 1);
+    expect(plan.slots).toHaveLength(7);
+    expect(new Set(plan.slots.map((s) => s.motif)).size).toBe(7);
+    expect(new Set(plan.slots.map((s) => s.theme)).size).toBe(7);
     expect(plan.slots.flatMap((s) => s.facts).every((f) => f.scope === "theme_only")).toBe(true);
   });
 
@@ -45,9 +46,10 @@ describe("planner & briefs", () => {
 });
 
 describe("onboarding rules", () => {
-  it("at most two follow-ups, none without personal consent", () => {
+  it("exactly the 12 core questions: no follow-ups, fewer without personal consent", () => {
     const ans = { children: a({ count: 1, youngest: "baby" }), pet: a({ status: "past" }), relationship: a({ status: "married" }) };
-    expect(applicableFollowups(ans, { personalDetails: true, providerProcessing: true })).toEqual(["fu_baby_word", "fu_past_pet_moment"]);
+    expect(applicableFollowups(ans, { personalDetails: true, providerProcessing: true })).toEqual([]);
+    expect(screenSequence(ans, { personalDetails: true, providerProcessing: true })).toHaveLength(12);
     expect(applicableFollowups(ans, { personalDetails: false, providerProcessing: true })).toEqual([]);
     expect(screenSequence(ans, { personalDetails: false, providerProcessing: true })).not.toContain("children");
   });
