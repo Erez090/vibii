@@ -94,6 +94,8 @@ test("all-skip onboarding → one reveal → one tap plays 1→7 → survives ta
   await page.getByTestId("play-toggle").focus();
   await page.keyboard.press("Enter");
   await expect.poll(async () => (await audioState(page)).paused).toBe(false);
+  const resumedAt = (await audioState(page)).t;
+  await expect.poll(async () => (await audioState(page)).t, { timeout: 10_000 }).toBeGreaterThan(resumedAt + 0.5);
 
   // Pause via keyboard.
   await page.getByTestId("play-toggle").focus();

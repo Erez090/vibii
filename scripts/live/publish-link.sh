@@ -5,7 +5,8 @@
 set -eu
 URL="$1"
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-REMOTE="${VIBII_PAGES_REMOTE:-$(git -C "$DIR" remote get-url origin)}"
+REMOTE="${VIBII_PAGES_REMOTE:-$(grep -E '^VIBII_PAGES_REMOTE=' "$DIR/.env.local" 2>/dev/null | cut -d= -f2-)}"
+REMOTE="${REMOTE:-$(git -C "$DIR" remote get-url origin)}"
 PAGES="$DIR/.data/live/pages"
 if [ ! -d "$PAGES/.git" ]; then
   rm -rf "$PAGES"
