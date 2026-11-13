@@ -9,7 +9,7 @@ import {
 } from "../onboarding";
 
 export type Energy = "low" | "low_mid" | "mid" | "mid_high" | "high";
-export type Role = "personal_opener" | "movement" | "connection" | "focus" | "closer";
+export type Role = "personal_opener" | "movement" | "connection" | "focus" | "anthem" | "daylight" | "closer";
 
 export interface FactRef {
   id: string; // `${category}.${field}` — source fact ID stored with the brief
@@ -58,7 +58,12 @@ function fact(a: Answers, consent: ConsentChoice, cat: keyof Answers, field: str
 }
 
 const MOVEMENT_ORDER = ["drive", "workout", "walking"];
-const ENERGY: Energy[] = ["mid_high", "high", "mid", "low_mid", "low"];
+// Seven-song arc: lift, peak, warm, focus, anthem, easy daylight, wind-down.
+const ENERGY: Energy[] = ["mid_high", "high", "mid", "low_mid", "high", "mid", "low"];
+const ALL_MOTIFS = [
+  "notes_wave", "pulse_sun", "circles_light", "window_glow", "lamp_grid", "mountain_sun", "paper_stars",
+  "confetti_dawn", "leaves", "paint_swirl", "moon_water", "highway_trails", "lanterns", "paper_plane",
+];
 
 export function planAlbum(a: Answers, consent: ConsentChoice, profileVersion: number): AlbumPlan {
   const personal = consent.personalDetails;
@@ -75,7 +80,8 @@ export function planAlbum(a: Answers, consent: ConsentChoice, profileVersion: nu
   const used = new Set<string>();
   const slots: SlotPlan[] = [];
 
-  const genreFor = (i: number) => (surprise && i >= genres.length ? ["pop", "electronic", "indie", "rnb", "lofi"][i % 5] : palette[i % palette.length]);
+  const SURPRISE = ["pop", "electronic", "indie", "rnb", "lofi", "latin", "folk"];
+  const genreFor = (i: number) => (surprise && i >= genres.length ? SURPRISE[i % SURPRISE.length] : palette[i % palette.length]);
   const push = (p: Omit<SlotPlan, "slot" | "genre" | "language" | "energy"> & Partial<SlotPlan>) => {
     const i = slots.length;
     slots.push({
@@ -147,7 +153,25 @@ export function planAlbum(a: Answers, consent: ConsentChoice, profileVersion: nu
   push({ role: "focus", theme: field ? `focus_${field}` : "focus", motif: "lamp_grid", moment: moments.includes("work") ? "work" : "home",
     instrumental: true, facts: field ? [{ id: "work.field", category: "work", field: "field", value: field, scope: "theme_only" }] : [] });
 
-  // (5) Upcoming event, otherwise a contrasting evening closer.
+  // (5) Anthem: a confident, high-energy song about the listener (nickname; country shapes the theme only).
+  const nameFact = fact(a, consent, "display_name", "text");
+  const countryFact = fact(a, consent, "country", "country");
+  push({ role: "anthem", theme: "main_character", motif: "pulse_sun", moment: moments.includes("workout") ? "workout" : moments[0] ?? "drive",
+    instrumental: false, facts: [nameFact, countryFact ? { ...countryFact, scope: "theme_only" as const } : null].filter(Boolean) as FactRef[] });
+
+  // (6) Daylight: an easy, feel-good song for another everyday moment (or an unused hobby).
+  const usedMoments = new Set(slots.map((x) => x.moment));
+  const otherMoment = moments.find((m) => !usedMoments.has(m) && m !== "winding_down") ?? (moments.includes("walking") ? "walking" : "home");
+  if ((hobbies.length || hobbyText) && !used.has("hobby")) {
+    const f = fact(a, consent, "hobby", "text");
+    push({ role: "daylight", theme: `hobby_${hobbies[0] ?? "free"}`, motif: hobbyMotif(hobbies[0] ?? ""), moment: otherMoment, instrumental: false,
+      facts: f ? [f] : [{ id: "hobby.hobbies", category: "hobby", field: "hobbies", value: hobbies[0], scope: "theme_only" }] });
+    used.add("hobby");
+  } else {
+    push({ role: "daylight", theme: "first_light", motif: "mountain_sun", moment: otherMoment, instrumental: false, facts: [] });
+  }
+
+  // (7) Upcoming event, otherwise a contrasting evening closer.
   const ev = usable(a, "upcoming_event", "kind");
   if (ev && ev !== "none") {
     const evText = fact(a, consent, "upcoming_event", "text");
@@ -156,6 +180,13 @@ export function planAlbum(a: Answers, consent: ConsentChoice, profileVersion: nu
       facts: [{ id: "upcoming_event.kind", category: "upcoming_event", field: "kind", value: ev, scope: "theme_only" }, ...(evText ? [evText] : [])] });
   } else {
     push({ role: "closer", theme: "evening", motif: "moon_water", moment: "winding_down", instrumental: prefersInstrumental, energy: "low", facts: [] });
+  }
+
+  // Every cover gets its own motif.
+  const seen = new Set<string>();
+  for (const sl of slots) {
+    if (seen.has(sl.motif)) sl.motif = ALL_MOTIFS.find((m) => !seen.has(m)) ?? sl.motif;
+    seen.add(sl.motif);
   }
 
   return { version: 1, profileVersion, tasteOnly: !personal, slots };

@@ -8,7 +8,7 @@ export async function POST(req: Request) {
     const b = await req.json();
     const int = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.floor(Number(v)) : undefined);
     await updateProviderConfig(admin, {
-      mode: ["demo", "manual", "official_api"].includes(b.mode) ? b.mode : undefined,
+      mode: ["demo", "manual", "official_api", "agent"].includes(b.mode) ? b.mode : undefined,
       dailyCap: int(b.dailyCap), monthlyCap: int(b.monthlyCap), concurrency: int(b.concurrency),
       agreementEvidence: typeof b.agreementEvidence === "string" ? b.agreementEvidence.slice(0, 1000) : undefined,
     });

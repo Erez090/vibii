@@ -93,7 +93,7 @@ describe("manual operator workflow", () => {
     }
     const st = await playerState(listener);
     expect(st.starterStatus).toBe("released");
-    expect(st.tracks.filter((t) => t.playlist === "starter")).toHaveLength(5);
+    expect(st.tracks.filter((t) => t.playlist === "starter")).toHaveLength(7);
   });
 
   it("validates uploads and links", async () => {

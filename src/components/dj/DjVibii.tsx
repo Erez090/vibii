@@ -15,6 +15,7 @@ interface Track extends QTrack {
 interface State {
   onboardingComplete: boolean;
   starterStatus: "none" | "waiting" | "delayed" | "manual_waiting" | "released" | "not_eligible";
+  starterProgress?: { ready: number; total: number };
   revealSeen: boolean;
   lastTrackId: string | null;
   lastPosition: number;
@@ -117,6 +118,19 @@ export function DjVibii() {
         </div>
         <h1 className="mt-6 text-2xl font-medium">{t("waitingTitle")}</h1>
         <p className="mt-2 max-w-sm text-muted">{body}</p>
+        {state.starterProgress && state.starterProgress.total > 0 && (
+          <div className="mt-5 w-full max-w-xs" data-testid="album-progress">
+            <div className="h-2 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full bg-peach transition-all"
+                style={{ width: `${Math.round((100 * state.starterProgress.ready) / state.starterProgress.total)}%` }} />
+            </div>
+            <p className="mt-2 text-sm text-lavender">
+              {lang === "he"
+                ? `${state.starterProgress.ready} מתוך ${state.starterProgress.total} שירים מוכנים`
+                : `${state.starterProgress.ready} of ${state.starterProgress.total} songs ready`}
+            </p>
+          </div>
+        )}
       </section>
     );
   }

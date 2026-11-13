@@ -9,28 +9,29 @@ import { all, completeOnboarding, drain, makeUser, one, setMode } from "../helpe
 describe("onboarding v0.3", () => {
   beforeEach(() => setMode("demo"));
 
-  it("household-rich path: final save alone queues exactly five slots + five cover tasks", async () => {
+  it("household-rich path: final save alone queues exactly seven slots + seven cover tasks", async () => {
     const u = await makeUser();
     const res = await completeOnboarding(u, "rich");
     expect(res?.justCompleted).toBe(true);
     const reqs = await all<{ slot: number; state: string }>("select slot, state from generation_requests where owner_id = $1 order by slot", [u.id]);
-    expect(reqs.map((r) => r.slot)).toEqual([1, 2, 3, 4, 5]);
-    expect((await one<{ n: number }>("select count(*)::int as n from job_queue j join generation_requests r on r.id = j.request_id where r.owner_id = $1 and j.kind = 'audio'", [u.id])).n).toBe(5);
-    expect((await one<{ n: number }>("select count(*)::int as n from job_queue j join generation_requests r on r.id = j.request_id where r.owner_id = $1 and j.kind = 'cover'", [u.id])).n).toBe(5);
-    // Rich facts shape the plan: baby phrase opener, partner song.
+    expect(reqs.map((r) => r.slot)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect((await one<{ n: number }>("select count(*)::int as n from job_queue j join generation_requests r on r.id = j.request_id where r.owner_id = $1 and j.kind = 'audio'", [u.id])).n).toBe(7);
+    expect((await one<{ n: number }>("select count(*)::int as n from job_queue j join generation_requests r on r.id = j.request_id where r.owner_id = $1 and j.kind = 'cover'", [u.id])).n).toBe(7);
+    // Rich facts shape the plan: pet opener (no follow-up questions any more), partner song, own anthem.
     const briefs = await all<{ brief: { plan: { role: string; theme: string } } }>("select brief from generation_requests where owner_id = $1 order by slot", [u.id]);
-    expect(briefs[0].brief.plan.theme).toBe("family_hook");
+    expect(briefs[0].brief.plan.theme).toBe("pet_joy");
+    expect(briefs[4].brief.plan.theme).toBe("main_character");
     expect(briefs[2].brief.plan.theme).toBe("partner");
-    expect(new Set(briefs.map((b) => b.brief.plan.theme)).size).toBe(5);
+    expect(new Set(briefs.map((b) => b.brief.plan.theme)).size).toBe(7);
   });
 
-  it("all-skip path completes and still yields five distinct songs", async () => {
+  it("all-skip path completes and still yields seven distinct songs", async () => {
     const u = await makeUser();
     const res = await completeOnboarding(u, "skip");
     expect(res?.completed).toBe(true);
     const briefs = await all<{ brief: { plan: { theme: string; motif: string } } }>("select brief from generation_requests where owner_id = $1 order by slot", [u.id]);
-    expect(briefs).toHaveLength(5);
-    expect(new Set(briefs.map((b) => b.brief.plan.motif)).size).toBe(5);
+    expect(briefs).toHaveLength(7);
+    expect(new Set(briefs.map((b) => b.brief.plan.motif)).size).toBe(7);
   });
 
   it("taste-only consent skips household questions and uses no personal facts", async () => {
@@ -39,7 +40,7 @@ describe("onboarding v0.3", () => {
     const answers = await tx((db) => loadAnswers(db, u.id));
     expect(answers.children?.skipped).toBe(true);
     const briefs = await all<{ brief: { sourceFacts: { scope: string }[] } }>("select brief from generation_requests where owner_id = $1", [u.id]);
-    expect(briefs).toHaveLength(5);
+    expect(briefs).toHaveLength(7);
     expect(briefs.flatMap((b) => b.brief.sourceFacts).some((f) => f.scope === "lyric")).toBe(false);
   });
 
@@ -60,7 +61,7 @@ describe("onboarding v0.3", () => {
     await tx((db) => saveAnswer(db, u, { category: "pet", value: { status: "now", name: "Bell", species: "dog" }, skipped: false, isPrivate: false }));
     await tx((db) => saveAnswer(db, u, { category: "fu_pet_joy", value: { text: "the beach" }, skipped: false, isPrivate: false }));
     const r = await tx((db) => saveAnswer(db, u, { category: "pet", value: { status: "no" }, skipped: false, isPrivate: false }));
-    expect(r.removedFollowups).toContain("fu_pet_joy");
+    expect(r.removedFollowups).toEqual([]); // follow-ups are never asked: a stray one is dropped as soon as it's saved
     const a = await tx((db) => loadAnswers(db, u.id));
     expect(a.fu_pet_joy).toBeUndefined();
     expect(a.pet?.value.name).toBe(""); // name dropped with the branch
@@ -90,7 +91,7 @@ describe("onboarding v0.3", () => {
     const consent = (await tx((db) => latestConsent(db, u.id)))!;
     await Promise.all([1, 2, 3].map(() => tx((db) => complete(db, u, answers, consent))));
     expect((await one<{ n: number }>("select count(*)::int as n from playlists where owner_id = $1 and kind = 'starter'", [u.id])).n).toBe(1);
-    expect((await one<{ n: number }>("select count(*)::int as n from generation_requests where owner_id = $1", [u.id])).n).toBe(5);
+    expect((await one<{ n: number }>("select count(*)::int as n from generation_requests where owner_id = $1", [u.id])).n).toBe(7);
     expect((await one<{ n: number }>("select count(*)::int as n from usage_ledger where owner_id = $1 and unit = 'starter_album' and entry = 'reserve'", [u.id])).n).toBe(1);
   });
 
@@ -101,7 +102,7 @@ describe("onboarding v0.3", () => {
     expect(before.starterStatus).toBe("waiting");
     expect(before.tracks).toHaveLength(0);
     await tx((db) => saveAnswer(db, u, { category: "hobby", value: { hobbies: ["reading"] }, skipped: false, isPrivate: false }));
-    expect((await one<{ n: number }>("select count(*)::int as n from generation_requests where owner_id = $1", [u.id])).n).toBe(5);
+    expect((await one<{ n: number }>("select count(*)::int as n from generation_requests where owner_id = $1", [u.id])).n).toBe(7);
     await drain();
     const after = await playerState(u);
     expect(after.starterStatus).toBe("released");
@@ -115,7 +116,7 @@ describe("onboarding v0.3", () => {
     for (const c of CORE_CATEGORIES.filter((c) => c !== "children")) {
       await tx((db) => saveAnswer(db, u, { category: c, value: {}, skipped: true, isPrivate: false }));
     }
-    expect((await one<{ n: number }>("select count(*)::int as n from generation_requests where owner_id = $1", [u.id])).n).toBe(5);
+    expect((await one<{ n: number }>("select count(*)::int as n from generation_requests where owner_id = $1", [u.id])).n).toBe(7);
     const briefs = await all<{ brief: { lyrics: string } }>("select brief from generation_requests where owner_id = $1", [u.id]);
     for (const b of briefs) {
       expect(b.brief.lyrics).not.toContain("zibzib");

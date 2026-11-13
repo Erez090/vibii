@@ -145,7 +145,7 @@ describe("generation pipeline", () => {
     expect((await tx((db) => balances(db, u.id))).songsAvailable).toBe(1);
   });
 
-  it("release gate: waits for all five audio + five covers; failed art falls back to distinct local covers", async () => {
+  it("release gate: waits for all seven audio + seven covers; failed art falls back to distinct local covers", async () => {
     // Art provider always fails → local illustrations.
     __setArtProviderForTests({ async render() { throw new Error("art down"); } });
     // Hold back slot 5's audio (late audio).
@@ -163,18 +163,19 @@ describe("generation pipeline", () => {
     const four = await playerState(u);
     expect(four.starterStatus).toBe("waiting");
     expect(four.tracks).toHaveLength(0); // four ready songs are not revealed
-    expect((await one<{ n: number }>("select count(*)::int as n from tracks where owner_id = $1 and status = 'approved'", [u.id])).n).toBe(4);
+    expect((await one<{ n: number }>("select count(*)::int as n from tracks where owner_id = $1 and status = 'approved'", [u.id])).n).toBe(6);
+    expect(four.starterProgress).toEqual({ ready: 6, total: 7 });
     holdSlot5 = false;
     await pool().query("update job_queue set run_after = now() where state = 'pending'");
     await drain();
     const st = await playerState(u);
     expect(st.starterStatus).toBe("released");
     const starter = st.tracks.filter((t) => t.playlist === "starter");
-    expect(starter).toHaveLength(5);
+    expect(starter).toHaveLength(7);
     expect(starter.every((t) => t.coverUrl && !t.external)).toBe(true);
     const covers = await all<{ svg: string; kind: string }>("select svg, kind from covers where owner_id = $1", [u.id]);
     expect(covers.every((c) => c.kind === "local_illustration")).toBe(true);
-    expect(new Set(covers.map((c) => c.svg)).size).toBe(5);
+    expect(new Set(covers.map((c) => c.svg)).size).toBe(7);
     expect((await one<{ n: number }>("select count(*)::int as n from analytics_events where owner_id = $1 and name = 'first_track_ready'", [u.id])).n).toBe(1);
     // Starter consumed exactly once.
     expect((await one<{ n: number }>("select count(*)::int as n from usage_ledger where owner_id = $1 and unit = 'starter_album' and entry = 'consume'", [u.id])).n).toBe(1);
@@ -190,7 +191,7 @@ describe("generation pipeline", () => {
     if (!r.ok) throw new Error();
     const st = await playerState(u);
     expect(st.starterStatus).toBe("released");
-    expect(st.tracks.filter((t) => t.playlist === "starter")).toHaveLength(5);
+    expect(st.tracks.filter((t) => t.playlist === "starter")).toHaveLength(7);
     expect((await one<{ state: string }>("select state from generation_requests where id = $1", [r.requestId])).state).toBe("awaiting_operator");
   });
 

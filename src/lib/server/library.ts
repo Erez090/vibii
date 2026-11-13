@@ -31,9 +31,11 @@ export async function playerState(user: SessionUser) {
     const st = (await db.query("select completed_at from onboarding_state where owner_id = $1", [user.id])).rows[0];
     const starter = (await db.query("select id, released_at from playlists where owner_id = $1 and kind = 'starter'", [user.id])).rows[0];
     let starterStatus: "none" | "waiting" | "delayed" | "manual_waiting" | "released" | "not_eligible" = "none";
+    let starterProgress = { ready: 0, total: 0 };
     if (st?.completed_at && !starter) starterStatus = "not_eligible";
     if (starter && !starter.released_at) {
       const reqs = (await db.query("select state, provider_mode from generation_requests where playlist_id = $1", [starter.id])).rows;
+      starterProgress = { ready: reqs.filter((r) => r.state === "ready").length, total: reqs.length };
       if (!reqs.length) starterStatus = "not_eligible";
       else if (reqs.some((r) => ["failed", "unknown_submission"].includes(r.state))) starterStatus = "delayed";
       else if (reqs.some((r) => r.provider_mode === "manual" || r.state === "awaiting_operator")) starterStatus = "manual_waiting";
@@ -71,6 +73,7 @@ export async function playerState(user: SessionUser) {
     return {
       onboardingComplete: Boolean(st?.completed_at),
       starterStatus,
+      starterProgress,
       revealSeen: Boolean(profile?.reveal_seen_at),
       lastTrackId: profile?.last_track_id ?? null,
       lastPosition: Number(profile?.last_position_seconds ?? 0),
