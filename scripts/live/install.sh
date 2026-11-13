@@ -20,6 +20,10 @@ unload() {
   for s in web worker tunnel; do
     launchctl bootout "gui/$UID_NUM/com.vibii.$s" 2>/dev/null || true
   done
+  # bootout is asynchronous: wait until every old service is really gone before bootstrapping again.
+  for s in web worker tunnel; do
+    for _ in $(seq 1 30); do launchctl print "gui/$UID_NUM/com.vibii.$s" >/dev/null 2>&1 || break; sleep 1; done
+  done
 }
 
 if [ "${1:-}" = "stop" ]; then
