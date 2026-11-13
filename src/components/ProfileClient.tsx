@@ -6,6 +6,7 @@ import { setLanguage, signOut } from "./auth-client";
 
 export function ProfileClient(props: {
   user: { displayName: string | null; email: string | null; isAdmin: boolean; isDemo: boolean; uiLanguage: "en" | "he" };
+  guest?: boolean;
   balances: { songsAvailable: number; credits: number; starterAvailable: number };
   consent: { personalDetails: boolean; providerProcessing: boolean } | null;
 }) {
@@ -45,7 +46,7 @@ export function ProfileClient(props: {
           <button onClick={saveName} className="rounded-xl border border-line px-3">✓</button>
         </div>
         {props.user.email && <p className="mt-2 text-sm text-muted">{props.user.email}</p>}
-        {props.user.isDemo && <p className="mt-2 text-xs text-lavender">Local demo account (isolated, this machine only).</p>}
+        {props.user.isDemo && <p className="mt-2 text-xs text-lavender">{props.guest ? "Guest account — it lives in this browser. Clearing cookies signs you out for good." : "Local demo account (isolated, this machine only)."}</p>}
       </div>
 
       <div className={card}>

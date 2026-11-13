@@ -11,7 +11,7 @@ async function audioState(page: Page) {
   });
 }
 
-test("all-skip onboarding → one reveal → one tap plays 1→5 → survives tab navigation", async ({ page }) => {
+test("all-skip onboarding → one reveal → one tap plays 1→7 → survives tab navigation", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/login");
   await page.getByTestId("demo-login").click();
@@ -33,9 +33,9 @@ test("all-skip onboarding → one reveal → one tap plays 1→5 → survives ta
   await page.waitForURL("**/");
   await expect(page.getByRole("heading", { name: "Your playlist is ready" })).toBeVisible({ timeout: 30_000 });
   const covers = page.locator("ol img");
-  await expect(covers).toHaveCount(5);
+  await expect(covers).toHaveCount(7);
   const srcs = await covers.evaluateAll((els) => els.map((e) => (e as HTMLImageElement).src));
-  expect(new Set(srcs).size).toBe(5);
+  expect(new Set(srcs).size).toBe(7);
   await page.screenshot({ path: `${shots}/reveal-390.png` });
 
   // One tap.
@@ -58,10 +58,13 @@ test("all-skip onboarding → one reveal → one tap plays 1→5 → survives ta
   const s1 = await audioState(page);
   expect(s1.count).toBe(1);
   expect(s1.paused).toBe(false);
-  // External recommendations are links, never local playback controls.
-  await expect(page.getByRole("link", { name: /Open in Spotify/ }).first()).toBeVisible();
+  // Ten real songs, each with Spotify / YouTube / Apple Music links and a 15-second preview button.
+  await expect(page.getByTestId("vibe-card")).toHaveCount(10);
+  await expect(page.getByRole("link", { name: "Spotify", exact: true })).toHaveCount(10);
+  await expect(page.getByRole("link", { name: "YouTube", exact: true })).toHaveCount(10);
+  await expect(page.getByRole("link", { name: "Apple Music", exact: true })).toHaveCount(10);
+  await expect(page.getByTestId("preview-button")).toHaveCount(10);
   await expect(page.locator("main").getByRole("slider")).toHaveCount(0);
-  await expect(page.getByText("Concept art · not the official cover")).toBeVisible();
   await page.screenshot({ path: `${shots}/my-vibes-390.png` });
 
   await tab(page, "create new").click();
@@ -74,6 +77,23 @@ test("all-skip onboarding → one reveal → one tap plays 1→5 → survives ta
   await tab(page, "DJ Vibii").click();
   await page.waitForURL(/\/$/);
   expect((await audioState(page)).count).toBe(1);
+
+  // My vibes preview: pauses the Vibii song, counts down from 15.
+  await tab(page, "My vibes").click();
+  await page.waitForURL("**/my-vibes");
+  await page.getByTestId("preview-button").first().click();
+  await expect.poll(async () => (await audioState(page)).paused, { timeout: 15_000 }).toBe(true);
+  await expect(page.getByTestId("preview-button").first()).toHaveText(/^(1[0-5]|[1-9])$/, { timeout: 15_000 });
+  await page.screenshot({ path: `${shots}/my-vibes-preview-390.png` });
+  await page.getByTestId("preview-button").first().click(); // stop
+  await page.getByTestId("more-vibes").click();
+  await page.waitForURL("**/my-vibes?page=1");
+  await expect(page.getByTestId("vibe-card")).toHaveCount(10);
+  await tab(page, "DJ Vibii").click();
+  await page.waitForURL(/\/$/);
+  await page.getByTestId("play-toggle").focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await audioState(page)).paused).toBe(false);
 
   // Pause via keyboard.
   await page.getByTestId("play-toggle").focus();

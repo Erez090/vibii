@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { authMode } from "@/lib/server/env";
+import { authMode, guestAccess, inviteCode } from "@/lib/server/env";
 import { getUser } from "@/lib/server/auth";
 import { LoginClient } from "@/components/LoginClient";
 
@@ -14,6 +14,10 @@ export default async function Login({ searchParams }: { searchParams: Promise<Re
       supabaseUrl={process.env.NEXT_PUBLIC_SUPABASE_URL ?? null}
       supabaseAnonKey={process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? null}
       notice={sp.deleted ? "deleted" : sp.expired ? "expired" : sp.error ? "error" : null}
+      guest={guestAccess()}
+      inviteRequired={guestAccess() && Boolean(inviteCode())}
+      initialInvite={(sp.invite ?? "").slice(0, 40)}
+      adminKey={(sp.admin ?? "").slice(0, 80)}
     />
   );
 }

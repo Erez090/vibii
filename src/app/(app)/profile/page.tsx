@@ -1,3 +1,4 @@
+import { guestAccess } from "@/lib/server/env";
 import { getUser } from "@/lib/server/auth";
 import { tx } from "@/lib/server/db";
 import { balances } from "@/lib/server/ledger";
@@ -10,6 +11,7 @@ export default async function Profile() {
   return (
     <ProfileClient
       user={{ displayName: user.displayName, email: user.email, isAdmin: user.isAdmin, isDemo: user.isDemo, uiLanguage: user.uiLanguage }}
+      guest={guestAccess()}
       balances={b}
       consent={consent ? { personalDetails: consent.personalDetails, providerProcessing: consent.providerProcessing } : null}
     />
